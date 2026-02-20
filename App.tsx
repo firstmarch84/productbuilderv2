@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Message, AppStatus, GroundingSource } from './types';
 import { chatWithGemini } from './services/geminiService';
 import { HEADER_LOGO_URL, INTRO_BANNER_URL } from './assets';
-import { Send, User, Bot, ExternalLink, ShieldCheck, Image as ImageIcon } from 'lucide-react';
+import { Send, User, Bot, ExternalLink, ShieldCheck, Image as ImageIcon, Trash2, RotateCcw } from 'lucide-react';
 import * as htmlToImage from 'html-to-image';
 
 const App: React.FC = () => {
@@ -21,6 +21,13 @@ const App: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const handleClearChat = () => {
+    if (window.confirm('대화 내역을 모두 초기화하시겠습니까?')) {
+      setMessages([{ role: 'model', image: INTRO_BANNER_URL }]);
+      setStatus(AppStatus.IDLE);
+    }
+  };
 
   const handleDownloadTable = async (index: number) => {
     const container = document.getElementById(`msg-container-${index}`);
@@ -163,12 +170,18 @@ const App: React.FC = () => {
       (error: any) => {
         console.error(error);
         setStatus(AppStatus.ERROR);
+        
+        let errorHint = '잠시 후 다시 시도해 주세요.';
+        if (error.message.includes('요청이 너무 많습니다')) {
+          errorHint = '분당 질문 제한을 초과했습니다. 1분 정도 기다리거나 위쪽 [새 대화] 버튼을 눌러주세요.';
+        }
+
         setMessages(prev => {
           const newMessages = [...prev];
           const lastIndex = newMessages.length - 1;
           newMessages[lastIndex] = { 
             role: 'model', 
-            text: `⚠️ 오류 발생: ${error.message || '공식 데이터를 가져오는 중 예상치 못한 문제가 발생했습니다.'}`,
+            text: `⚠️ ${error.message}\n\n💡 **안내:** ${errorHint}`,
             isStreaming: false 
           };
           return newMessages;
@@ -189,9 +202,19 @@ const App: React.FC = () => {
             className="h-10 w-auto object-contain"
           />
         </div>
-        <div className="hidden sm:flex items-center text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100">
-          <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-          질병관리청 공식 데이터
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleClearChat}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-500 bg-slate-100 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all border border-transparent hover:border-red-100"
+            title="대화 초기화"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">새 대화 시작</span>
+          </button>
+          <div className="hidden sm:flex items-center text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+            <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+            공식 데이터 모드
+          </div>
         </div>
       </header>
 
@@ -226,7 +249,7 @@ const App: React.FC = () => {
                   <div className={`rounded-2xl px-5 py-4 shadow-sm leading-relaxed border transition-all ${
                     msg.role === 'user' 
                       ? 'bg-blue-600 text-white border-blue-600 rounded-tr-none' 
-                      : 'bg-white text-slate-800 border-slate-200 rounded-tl-none'
+                      : 'bg-white text-slate-800 border-slate-200 rounded-tl-none shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07)]'
                   }`}>
                     <div className="markdown-body text-sm sm:text-base">
                       {/* Thought Process (Thinking) */}
