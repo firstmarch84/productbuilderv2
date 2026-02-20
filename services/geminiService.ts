@@ -1,58 +1,45 @@
-
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { MODEL_NAME, SYSTEM_INSTRUCTION } from "../constants";
 
 export const chatWithGemini = async (
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
-  onChunk: (data: { text?: string; thought?: string }) => void,
+  onChunk: (data: { text?: string; }) => void,
   onComplete: (groundingChunks: any[]) => void,
   onError: (error: any) => void
 ) => {
-  // Vite exposes variables starting with VITE_ to the client
-  const env = (import.meta as any).env;
-  const apiKey = env.VITE_API_KEY || env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY;
+  // API Key is now exposed via Vite's `define` feature in vite.config.ts
+  const apiKey = import.meta.env.VITE_API_KEY;
 
   if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
-    onError(new Error("API Key가 설정되지 않았습니다. 환경 변수(VITE_API_KEY)를 확인해주세요."));
+    onError(new Error("API 키가 설정되지 않았습니다. Cloudflare Pages 환경 변수에서 VITE_API_KEY를 설정했는지 확인하세요."));
     return;
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  
   try {
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       systemInstruction: SYSTEM_INSTRUCTION,
-      // Google Search tool can be restricted depending on region or key type
       tools: [{ googleSearch: {} }],
     });
 
     const result = await model.generateContentStream({ contents: history });
 
-    let groundingMetadata: any = null;
-
+    // Process the stream for text chunks as they arrive
     for await (const chunk of result.stream) {
-      // Catch potential errors within the stream (like safety filters)
-      try {
-        const text = chunk.text();
-        if (text) {
-          onChunk({ text });
-        }
-      } catch (e) {
-        console.warn("Chunk processing warning:", e);
-      }
-
-      if (chunk.groundingMetadata) {
-        groundingMetadata = chunk.groundingMetadata;
+      const text = chunk.text();
+      if (text) {
+        onChunk({ text });
       }
     }
 
-    const chunks = groundingMetadata?.groundingAttributions || [];
-    onComplete(chunks);
-  } catch (error: any) {
-    console.error("Gemini API Error Details:", error);
-    // Pass the actual error message back to the UI for debugging
-    const errorMessage = error?.message || "Gemini API와의 통신 중 알 수 없는 오류가 발생했습니다.";
-    onError(new Error(errorMessage));
+    // After the stream is complete, get the aggregated response for final data
+    const response = await result.response;
+    const groundingAttributions = response.groundingMetadata?.groundingAttributions ?? [];
+    onComplete(groundingAttributions);
+
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    onError(error);
   }
 };
