@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -22,10 +23,23 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleClearChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     if (window.confirm('대화 내역을 모두 초기화하시겠습니까?')) {
       setMessages([{ role: 'model', image: INTRO_BANNER_URL }]);
       setStatus(AppStatus.IDLE);
+      setInput('');
     }
   };
 
@@ -106,9 +120,16 @@ const App: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || status === AppStatus.LOADING) return;
+    const trimmedInput = input.trim();
+    if (!trimmedInput || status === AppStatus.LOADING) return;
 
-    const userMessage: Message = { role: 'user', text: input };
+    // Abort previous request if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    const userMessage: Message = { role: 'user', text: trimmedInput };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setStatus(AppStatus.LOADING);
@@ -128,66 +149,82 @@ const App: React.FC = () => {
     let currentText = '';
     let currentThought = '';
 
-    await chatWithGemini(
-      history,
-      (chunk) => {
-        if (chunk.text) currentText += chunk.text;
-        if (chunk.thought) currentThought += chunk.thought;
+    try {
+      await chatWithGemini(
+        history,
+        (chunk) => {
+          if (chunk.text) currentText += chunk.text;
+          if (chunk.thought) currentThought += chunk.thought;
 
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          newMessages[lastIndex] = { 
-            ...newMessages[lastIndex], 
-            text: currentText,
-            thought: currentThought 
-          };
-          return newMessages;
-        });
-      },
-      (groundingChunks) => {
-        const sources: GroundingSource[] = groundingChunks
-          .map((chunk: any) => ({
-            title: chunk.web?.title || '질병관리청 공식 정보',
-            uri: chunk.web?.uri
-          }))
-          .filter((s: GroundingSource) => 
-            s.uri && (s.uri.includes('kdca.go.kr') || s.uri.includes('nip.kdca.go.kr'))
-          );
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastIndex = newMessages.length - 1;
+            if (newMessages[lastIndex]?.role === 'model') {
+              newMessages[lastIndex] = { 
+                ...newMessages[lastIndex], 
+                text: currentText,
+                thought: currentThought 
+              };
+            }
+            return newMessages;
+          });
+        },
+        (groundingChunks) => {
+          const sources: GroundingSource[] = groundingChunks
+            .map((chunk: any) => ({
+              title: chunk.web?.title || '질병관리청 공식 정보',
+              uri: chunk.web?.uri
+            }))
+            .filter((s: GroundingSource) => 
+              s.uri && (s.uri.includes('kdca.go.kr') || s.uri.includes('nip.kdca.go.kr'))
+            );
 
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          newMessages[lastIndex] = { 
-            ...newMessages[lastIndex], 
-            isStreaming: false,
-            groundingSources: sources 
-          };
-          return newMessages;
-        });
-        setStatus(AppStatus.IDLE);
-      },
-      (error: any) => {
-        console.error(error);
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastIndex = newMessages.length - 1;
+            if (newMessages[lastIndex]?.role === 'model') {
+              newMessages[lastIndex] = { 
+                ...newMessages[lastIndex], 
+                isStreaming: false,
+                groundingSources: sources 
+              };
+            }
+            return newMessages;
+          });
+          setStatus(AppStatus.IDLE);
+        },
+        (error: any) => {
+          if (error.name === 'AbortError') return;
+          
+          console.error(error);
+          setStatus(AppStatus.ERROR);
+          
+          let errorHint = '잠시 후 다시 시도해 주세요.';
+          if (error.message.includes('요청이 너무 많습니다')) {
+            errorHint = '분당 질문 제한을 초과했습니다. 1분 정도 기다리거나 위쪽 [새 대화 시작] 버튼을 눌러주세요.';
+          }
+
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastIndex = newMessages.length - 1;
+            if (newMessages[lastIndex]?.role === 'model') {
+              newMessages[lastIndex] = { 
+                ...newMessages[lastIndex], 
+                role: 'model', 
+                text: `⚠️ ${error.message}\n\n💡 **안내:** ${errorHint}`,
+                isStreaming: false 
+              };
+            }
+            return newMessages;
+          });
+        },
+        abortControllerRef.current.signal
+      );
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
         setStatus(AppStatus.ERROR);
-        
-        let errorHint = '잠시 후 다시 시도해 주세요.';
-        if (error.message.includes('요청이 너무 많습니다')) {
-          errorHint = '분당 질문 제한을 초과했습니다. 1분 정도 기다리거나 위쪽 [새 대화] 버튼을 눌러주세요.';
-        }
-
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          newMessages[lastIndex] = { 
-            role: 'model', 
-            text: `⚠️ ${error.message}\n\n💡 **안내:** ${errorHint}`,
-            isStreaming: false 
-          };
-          return newMessages;
-        });
       }
-    );
+    }
   };
 
   return (

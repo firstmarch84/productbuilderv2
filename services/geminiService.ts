@@ -6,7 +6,8 @@ export const chatWithGemini = async (
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   onChunk: (data: { text?: string; thought?: string }) => void,
   onComplete: (groundingChunks: any[]) => void,
-  onError: (error: any) => void
+  onError: (error: any) => void,
+  signal?: AbortSignal // Add support for cancellation
 ) => {
   // Robust API Key retrieval for various environments (Vite, Next.js, etc.)
   let apiKey = '';
@@ -38,11 +39,17 @@ export const chatWithGemini = async (
       tools: [{ googleSearch: {} }],
     });
 
+    // Check if already aborted
+    if (signal?.aborted) return;
+
     const result = await model.generateContentStream({ contents: history });
 
     let groundingMetadata: any = null;
 
     for await (const chunk of result.stream) {
+      // Respect abort signal during streaming
+      if (signal?.aborted) return;
+
       try {
         const text = chunk.text();
         if (text) {
@@ -61,6 +68,9 @@ export const chatWithGemini = async (
     const chunks = groundingMetadata?.groundingAttributions || [];
     onComplete(chunks);
   } catch (error: any) {
+    // Ignore errors if aborted
+    if (signal?.aborted) return;
+
     console.error("Gemini API Error Details:", error);
     
     // Provide user-friendly error messages based on common issues
@@ -68,7 +78,7 @@ export const chatWithGemini = async (
     
     if (errorMessage.includes("API key not valid")) {
       errorMessage = "API Key가 유효하지 않습니다. 설정을 확인해주세요.";
-    } else if (errorMessage.includes("429")) {
+    } else if (errorMessage.includes("429") || errorMessage.includes("Too Many Requests")) {
       errorMessage = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
     } else if (errorMessage.includes("Safety")) {
       errorMessage = "안전 정책에 의해 답변이 차단되었습니다. 다른 질문을 시도해주세요.";
