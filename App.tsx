@@ -160,7 +160,7 @@ const App: React.FC = () => {
         });
         setStatus(AppStatus.IDLE);
       },
-      (error) => {
+      (error: any) => {
         console.error(error);
         setStatus(AppStatus.ERROR);
         setMessages(prev => {
@@ -168,7 +168,7 @@ const App: React.FC = () => {
           const lastIndex = newMessages.length - 1;
           newMessages[lastIndex] = { 
             role: 'model', 
-            text: '공식 데이터를 가져오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+            text: `⚠️ 오류 발생: ${error.message || '공식 데이터를 가져오는 중 예상치 못한 문제가 발생했습니다.'}`,
             isStreaming: false 
           };
           return newMessages;
