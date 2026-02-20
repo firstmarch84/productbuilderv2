@@ -3,16 +3,8 @@
 
 const svgToBase64 = (str: string) => `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(str)))}`;
 
-// 헤더 로고: "예방접종 오피셜 봇" (심플형)
-const headerSvg = `
-<svg width="240" height="40" viewBox="0 0 240 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M20 8C20 8 10 12 10 20C10 28 20 34 20 34C20 34 30 28 30 20C30 12 20 8 20 8Z" fill="#2563EB"/>
-  <path d="M17 20L19 22L23 18" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="38" y="26" font-family="'Pretendard', sans-serif" font-weight="800" font-size="18" fill="#1E293B" letter-spacing="-0.5">
-    예방접종 <tspan fill="#2563EB">오피셜 봇</tspan>
-  </text>
-</svg>
-`;
+// 헤더 로고: "예방접종 오피셜 봇" (기존 SVG는 백업용으로 유지하거나 필요 없으면 제거 가능)
+// export const HEADER_LOGO_URL = svgToBase64(headerSvg.trim());
 
 // 인트로 배너: "예방접종 오피셜 봇" (3D 강조형)
 const bannerSvg = `
@@ -62,5 +54,5 @@ const bannerSvg = `
 </svg>
 `;
 
-export const HEADER_LOGO_URL = svgToBase64(headerSvg.trim());
+export const HEADER_LOGO_URL = '/nip-logo.png';
 export const INTRO_BANNER_URL = '/main-banner.png';
