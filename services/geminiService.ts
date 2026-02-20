@@ -85,6 +85,7 @@ export const chatWithGemini = async (
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Gemini API (Fetch Stream) Error:", errorMessage);
-    onError(new Error(`Gemini 스트리밍 API 통신 중 오류가 발생했습니다: ${errorMessage}`));
+    // FIXED: Changed template literal to simple string concatenation for build tool compatibility.
+    onError(new Error('Gemini 스트리밍 API 통신 중 오류가 발생했습니다: ' + errorMessage));
   }
 };
