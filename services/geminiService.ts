@@ -4,7 +4,7 @@ import { MODEL_NAME, SYSTEM_INSTRUCTION } from "../constants";
 export const chatWithGemini = async (
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   onChunk: (data: { text?: string; }) => void,
-  onComplete: (groundingChunks: any[]) => void,
+  onComplete: () => void, // Removed groundingChunks from parameters
   onError: (error: any) => void
 ) => {
   const apiKey = import.meta.env.VITE_API_KEY;
@@ -17,24 +17,24 @@ export const chatWithGemini = async (
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: MODEL_NAME, // Using 'gemini-pro'
+      model: MODEL_NAME,
       systemInstruction: SYSTEM_INSTRUCTION,
-      tools: [{ googleSearch: {} }],
+      // --- CRITICAL FIX: Removing the `tools` property entirely ---
+      // tools: [{ googleSearch: {} }], 
     });
 
-    // --- DIAGNOSTIC CHANGE: Use non-streaming generateContent ---
-    const result = await model.generateContent({ contents: history });
-    const response = result.response;
-    
-    // Send the full text in a single chunk
-    const text = response.text();
-    if (text) {
-      onChunk({ text });
-    }
+    // --- Re-enable streaming now that the conflicting tool is removed ---
+    const result = await model.generateContentStream({ contents: history });
 
-    // Send the grounding metadata
-    const groundingAttributions = response.groundingMetadata?.groundingAttributions ?? [];
-    onComplete(groundingAttributions);
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        onChunk({ text });
+      }
+    }
+    
+    // Signal completion without grounding data
+    onComplete();
 
   } catch (error) {
     const errorMessage = (error as any)?.message 
