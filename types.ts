@@ -2,6 +2,7 @@
 export interface Message {
   role: 'user' | 'model';
   text?: string;
+  thought?: string;
   image?: string;
   isStreaming?: boolean;
   groundingSources?: GroundingSource[];

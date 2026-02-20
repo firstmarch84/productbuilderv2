@@ -4,11 +4,13 @@ import { MODEL_NAME, SYSTEM_INSTRUCTION } from "../constants";
 
 export const chatWithGemini = async (
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
-  onChunk: (text: string) => void,
+  onChunk: (data: { text?: string; thought?: string }) => void,
   onComplete: (groundingChunks: any[]) => void,
   onError: (error: any) => void
 ) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Use VITE_API_KEY for browser compatibility
+  const apiKey = (import.meta as any).env.VITE_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const stream = await ai.models.generateContentStream({
@@ -21,18 +23,30 @@ export const chatWithGemini = async (
       },
     });
 
-    let fullText = '';
     let groundingMetadata: any = null;
 
     for await (const chunk of stream) {
-      const c = chunk as GenerateContentResponse;
-      const text = c.text;
-      if (text) {
-        fullText += text;
-        onChunk(text);
+      const c = chunk as any; // Using any as SDK types for thought are still evolving
+      
+      const parts = c.candidates?.[0]?.content?.parts || [];
+      
+      let textChunk = '';
+      let thoughtChunk = '';
+
+      for (const part of parts) {
+        if (part.text) {
+          textChunk += part.text;
+        }
+        if (part.thought) {
+          thoughtChunk += part.thought;
+        }
+      }
+
+      if (textChunk || thoughtChunk) {
+        onChunk({ text: textChunk, thought: thoughtChunk });
       }
       
-      // Attempt to capture grounding metadata from any chunk that might contain it
+      // Attempt to capture grounding metadata
       if (c.candidates?.[0]?.groundingMetadata) {
         groundingMetadata = c.candidates[0].groundingMetadata;
       }

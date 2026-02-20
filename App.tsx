@@ -106,12 +106,10 @@ const App: React.FC = () => {
     setInput('');
     setStatus(AppStatus.LOADING);
 
-    const modelMessagePlaceholder: Message = { role: 'model', text: '', isStreaming: true };
+    const modelMessagePlaceholder: Message = { role: 'model', text: '', thought: '', isStreaming: true };
     setMessages(prev => [...prev, modelMessagePlaceholder]);
 
     // Construct history: Only include messages that have text.
-    // The initial banner message (image only) will be excluded from history, 
-    // which is fine as the system instruction sets the persona.
     const history = messages
       .filter(m => m.text) 
       .concat(userMessage)
@@ -121,15 +119,22 @@ const App: React.FC = () => {
       }));
 
     let currentText = '';
+    let currentThought = '';
 
     await chatWithGemini(
       history,
       (chunk) => {
-        currentText += chunk;
+        if (chunk.text) currentText += chunk.text;
+        if (chunk.thought) currentThought += chunk.thought;
+
         setMessages(prev => {
           const newMessages = [...prev];
           const lastIndex = newMessages.length - 1;
-          newMessages[lastIndex] = { ...newMessages[lastIndex], text: currentText };
+          newMessages[lastIndex] = { 
+            ...newMessages[lastIndex], 
+            text: currentText,
+            thought: currentThought 
+          };
           return newMessages;
         });
       },
@@ -224,7 +229,18 @@ const App: React.FC = () => {
                       : 'bg-white text-slate-800 border-slate-200 rounded-tl-none'
                   }`}>
                     <div className="markdown-body text-sm sm:text-base">
-                      {msg.text ? renderContent(msg.text, idx) : (msg.isStreaming && (
+                      {/* Thought Process (Thinking) */}
+                      {msg.thought && (
+                        <div className="mb-4 p-3 bg-slate-50 border-l-2 border-slate-200 rounded-r-lg text-[11px] text-slate-500 italic">
+                          <div className="font-bold mb-1 flex items-center gap-1 text-slate-400 uppercase tracking-tighter">
+                            <Bot className="w-3 h-3" />
+                            NIP 데이터 분석 프로세스
+                          </div>
+                          <div className="whitespace-pre-wrap opacity-80">{msg.thought}</div>
+                        </div>
+                      )}
+
+                      {msg.text ? renderContent(msg.text, idx) : (msg.isStreaming && !msg.thought && (
                         <div className="flex items-center gap-1.5 py-2">
                           <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
                           <span className="text-xs text-slate-400 font-medium italic">NIP 데이터를 분석하고 있습니다...</span>
