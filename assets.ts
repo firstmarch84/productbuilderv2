@@ -54,5 +54,5 @@ const bannerSvg = `
 </svg>
 `;
 
-export const HEADER_LOGO_URL = '/nip-logo.png';
+export const HEADER_LOGO_URL = '/header-logo.png';
 export const INTRO_BANNER_URL = '/main-banner.png';
