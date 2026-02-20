@@ -7,7 +7,6 @@ export const chatWithGemini = async (
   onComplete: (groundingChunks: any[]) => void,
   onError: (error: any) => void
 ) => {
-  // API Key is now exposed via Vite's `define` feature in vite.config.ts
   const apiKey = import.meta.env.VITE_API_KEY;
 
   if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
@@ -18,28 +17,28 @@ export const chatWithGemini = async (
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
+      model: MODEL_NAME, // Using 'gemini-pro'
       systemInstruction: SYSTEM_INSTRUCTION,
       tools: [{ googleSearch: {} }],
     });
 
-    const result = await model.generateContentStream({ contents: history });
-
-    // Process the stream for text chunks as they arrive
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) {
-        onChunk({ text });
-      }
+    // --- DIAGNOSTIC CHANGE: Use non-streaming generateContent ---
+    const result = await model.generateContent({ contents: history });
+    const response = result.response;
+    
+    // Send the full text in a single chunk
+    const text = response.text();
+    if (text) {
+      onChunk({ text });
     }
 
-    // After the stream is complete, get the aggregated response for final data
-    const response = await result.response;
+    // Send the grounding metadata
     const groundingAttributions = response.groundingMetadata?.groundingAttributions ?? [];
     onComplete(groundingAttributions);
 
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    onError(error);
+    const errorMessage = (error as any)?.message 
+      || "Gemini API와의 통신 중 알 수 없는 오류가 발생했습니다.";
+    onError(new Error(errorMessage));
   }
 };
