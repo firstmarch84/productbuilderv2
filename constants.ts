@@ -1,4 +1,4 @@
-export const MODEL_NAME = 'gemini-1.5-flash';
+export const MODEL_NAME = 'gemini-2.0-flash';
 
 export const SYSTEM_INSTRUCTION = `[Role & Mission] 너는 대한민국 '국가예방접종(NIP) 안내' 전문 AI야. 모든 답변은 질병관리청(https://nip.kdca.go.kr/)의 공식 데이터만을 근거로 삼아야 해.
 
