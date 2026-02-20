@@ -235,8 +235,19 @@ const App: React.FC = () => {
           {/* Header Logo Image */}
           <img 
             src={HEADER_LOGO_URL}
-            alt="예방접종 오피셜 봇" 
-            className="h-10 w-auto object-contain"
+            alt="NIP AI 가이드 로고" 
+            className="h-12 w-auto object-contain max-w-[200px]"
+            onError={(e) => {
+              // Fallback to text if image fails
+              e.currentTarget.style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent) {
+                const text = document.createElement('span');
+                text.className = 'font-bold text-lg text-blue-600';
+                text.innerText = '예방접종 오피셜 봇';
+                parent.appendChild(text);
+              }
+            }}
           />
         </div>
         <div className="flex items-center gap-2">
