@@ -1,91 +1,79 @@
+
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { MODEL_NAME, SYSTEM_INSTRUCTION } from "../constants";
 
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:streamGenerateContent`;
-
-// FINAL BATTLE: Direct fetch to the v1beta streaming API, bypassing SDK and cache issues.
 export const chatWithGemini = async (
-  history: { role: "user" | "model"; parts: { text: string }[] }[],
-  onChunk: (data: { text?: string }) => void,
-  onComplete: () => void,
-  onError: (error: Error) => void
+  history: { role: 'user' | 'model'; parts: { text: string }[] }[],
+  onChunk: (data: { text?: string; thought?: string }) => void,
+  onComplete: (groundingChunks: any[]) => void,
+  onError: (error: any) => void
 ) => {
-  const apiKey = import.meta.env.VITE_API_KEY;
-
-  if (!apiKey || apiKey === "PLACEHOLDER_API_KEY") {
-    return onError(new Error("API 키가 설정되지 않았습니다. Cloudflare 환경 변수를 확인하세요."));
+  // Robust API Key retrieval for various environments (Vite, Next.js, etc.)
+  let apiKey = '';
+  try {
+    const env = (import.meta as any).env || {};
+    apiKey = env.VITE_API_KEY || env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY;
+  } catch (e) {
+    // Ignore error if import.meta is not available
+  }
+  
+  // Fallback to process.env if available (Node.js/Server-side)
+  if (!apiKey && typeof process !== 'undefined' && process.env) {
+    apiKey = process.env.VITE_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY || '';
   }
 
-  try {
-    const requestBody = {
-      contents: history,
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-      safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-      ],
-    };
+  if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY') {
+    console.error("API Key missing. Checked VITE_API_KEY, GEMINI_API_KEY.");
+    onError(new Error("API Key가 설정되지 않았습니다. 환경 변수(VITE_API_KEY)를 확인해주세요."));
+    return;
+  }
 
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey, // Using the header you discovered
-      },
-      body: JSON.stringify(requestBody),
+  const genAI = new GoogleGenerativeAI(apiKey);
+  
+  try {
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      systemInstruction: SYSTEM_INSTRUCTION,
+      // Tools configuration
+      tools: [{ googleSearch: {} }],
     });
 
-    if (!response.ok || !response.body) {
-      const errorText = await response.text();
-      throw new Error(`API 요청 실패: ${response.status} ${response.statusText}. 응답: ${errorText}`);
-    }
+    const result = await model.generateContentStream({ contents: history });
 
-    // Manually read and parse the streaming response
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    let groundingMetadata: any = null;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
+    for await (const chunk of result.stream) {
+      try {
+        const text = chunk.text();
+        if (text) {
+          onChunk({ text });
+        }
+      } catch (e) {
+        // chunk.text() might throw if the chunk implies a safety block or finish reason without text
+        console.warn("Chunk processing warning (likely safety or finish reason):", e);
       }
-      buffer += decoder.decode(value, { stream: true });
 
-      // Google's streaming format often sends data in chunks that may not be complete JSON objects.
-      // We look for the start of the data `[
-` and try to parse what we have.
-      if (buffer.startsWith('[')) {
-          try {
-            // It's not valid JSON yet, just the start of an array
-            // We need to process line by line as they come in
-            let lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep the last, potentially incomplete line
-
-            for(const line of lines) {
-                if (line.includes('"text"')) {
-                    const cleanedLine = line.replace(/,$/, '').trim();
-                    const json = JSON.parse(cleanedLine);
-                    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) {
-                        onChunk({ text });
-                    }
-                }
-            }
-
-          } catch (e) {
-            // Incomplete JSON, wait for more data
-          }
+      if (chunk.groundingMetadata) {
+        groundingMetadata = chunk.groundingMetadata;
       }
     }
 
-    onComplete();
+    const chunks = groundingMetadata?.groundingAttributions || [];
+    onComplete(chunks);
+  } catch (error: any) {
+    console.error("Gemini API Error Details:", error);
+    
+    // Provide user-friendly error messages based on common issues
+    let errorMessage = error?.message || "Gemini API와의 통신 중 알 수 없는 오류가 발생했습니다.";
+    
+    if (errorMessage.includes("API key not valid")) {
+      errorMessage = "API Key가 유효하지 않습니다. 설정을 확인해주세요.";
+    } else if (errorMessage.includes("429")) {
+      errorMessage = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+    } else if (errorMessage.includes("Safety")) {
+      errorMessage = "안전 정책에 의해 답변이 차단되었습니다. 다른 질문을 시도해주세요.";
+    }
 
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("Gemini API (Fetch Stream) Error:", errorMessage);
-    // FIXED: Changed template literal to simple string concatenation for build tool compatibility.
-    onError(new Error('Gemini 스트리밍 API 통신 중 오류가 발생했습니다: ' + errorMessage));
+    onError(new Error(errorMessage));
   }
 };
